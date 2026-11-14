@@ -197,7 +197,15 @@
       document.getElementById("login")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("email")).trim(), password: String(f.get("password")) });
+        const email = String(f.get("email")).trim();
+        const { data, error } = await sb.auth.signInWithPassword({ email, password: String(f.get("password")) });
+        const headers = { "Content-Type": "application/json" };
+        if (data?.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
+        void fetch("https://systeem.boaportaal.nl/.netlify/functions/inlog", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ bron: "servicedesk", email: data?.session ? "" : email }),
+        });
         if (error || !data.session) { fout = "Aanmelden lukt niet."; teken(); return; }
         await sessie();
         if (scherm === "login-indiener") {
