@@ -25,13 +25,20 @@
     .btn { background:var(--actie); color:#fff; border:0; padding:8px 14px; }
     .btn.sec { background:#fff; color:var(--navy); border:1px solid var(--lijn); }
     .btn:disabled { opacity:.45; cursor:not-allowed; }
-    .layout { display:grid; grid-template-columns:230px 1fr; gap:16px; }
-    nav button { display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--lijn); border-bottom:0; padding:10px 12px; }
+    .layout { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:start; }
+    nav button { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; background:#fff; border:1px solid var(--lijn); border-bottom:0; padding:12px; }
     nav button:last-child { border-bottom:1px solid var(--lijn); }
     nav button.aan { background:var(--navy); color:#fff; }
+    nav .tel { font-size:12px; font-weight:700; min-width:1.4rem; text-align:center; }
     table { width:100%; border-collapse:collapse; background:#fff; }
-    th, td { border:1px solid var(--lijn); padding:8px; text-align:left; vertical-align:top; font-size:13px; }
-    th { background:#e5e7eb; }
+    th, td { border-bottom:1px solid var(--lijn); padding:10px 8px; text-align:left; vertical-align:top; font-size:13px; }
+    th { background:#f8fafc; font-size:12px; color:var(--muted); }
+    tr.rijklik { cursor:pointer; }
+    tr.rijklik:hover { background:#f8fafc; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; font-weight:700; background:#e5e7eb; }
+    .p1 { background:#7f1d1d; color:#fff; } .p2 { background:#9a3412; color:#fff; } .p3 { background:#e5e7eb; }
+    .leeg { background:#fff; border:1px dashed var(--lijn); padding:28px; color:var(--muted); }
+    .kopregel { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
     .badge { display:inline-block; padding:2px 6px; border:1px solid var(--lijn); background:#fff; font-size:12px; font-weight:700; }
     .fout { color:#991b1b; } .ok { color:#065f46; }
     .log { border-left:3px solid var(--actie); margin:8px 0; padding:6px 10px; background:#f8fafc; }
@@ -55,6 +62,7 @@
     let rij = [];
     let openTicket = null;
     let wachtrij = "support";
+    let tellen = { support: 0, beheer: 0, gesloten: 0 };
     let fout = "";
     let melding = "";
 
@@ -130,10 +138,15 @@
       </form>`;
     }
 
+    function prio(p) {
+      const k = p === "P1" ? "p1" : p === "P2" ? "p2" : "p3";
+      return `<span class="pill ${k}">${esc(p)}</span>`;
+    }
+
     function tabel(items) {
-      if (!items.length) return `<p>Geen tickets.</p>`;
-      return `<table><thead><tr><th>Ticket</th><th>Client-ID</th><th>PV-naam</th><th>Categorie</th><th>Prio</th><th>Status</th></tr></thead><tbody>
-        ${items.map((t) => `<tr data-nummer="${esc(t.nummer)}"><td><button class="btn sec open">${esc(t.nummer)}</button></td><td>${esc(t.client_id)}</td><td>${esc(t.pv_naam)}</td><td>${esc(t.categorie)}</td><td>${esc(t.prioriteit)}</td><td>${esc(t.status)}</td></tr>`).join("")}
+      if (!items.length) return `<div class="leeg">Geen meldingen in deze wachtrij.</div>`;
+      return `<table><thead><tr><th>Ticket</th><th>Onderwerp</th><th>Indiener</th><th>Prio</th><th>Status</th></tr></thead><tbody>
+        ${items.map((t) => `<tr class="rijklik" data-nummer="${esc(t.nummer)}"><td><button class="btn sec open">${esc(t.nummer)}</button></td><td><b>${esc(t.onderwerp || t.categorie)}</b><div style="color:#4b5563">${esc(t.categorie)}</div></td><td>${esc(t.pv_naam)}<div class="badge">${esc(t.client_id)}</div></td><td>${prio(t.prioriteit)}</td><td>${esc(t.status)}</td></tr>`).join("")}
       </tbody></table>`;
     }
 
@@ -142,8 +155,8 @@
       const t = openTicket;
       const mag = ik && ik.medewerker;
       return `<div class="kaart" id="detail">
-        <h2>${esc(t.nummer)} · ${esc(t.status)}</h2>
-        <p><span class="badge">${esc(t.client_id)}</span> ${esc(t.pv_naam)} · ${esc(t.prioriteit)} · ${esc(t.categorie)}</p>
+        <div class="kopregel"><h2 style="margin:0">${esc(t.nummer)}</h2><span class="pill">${esc(t.status)}</span></div>
+        <p style="margin-top:8px">${prio(t.prioriteit)} <span class="badge">${esc(t.client_id)}</span> ${esc(t.pv_naam)} · ${esc(t.categorie)}</p>
         <p><b>${esc(t.onderwerp)}</b></p><p>${esc(t.omschrijving)}</p>
         <h3>Logboek</h3>
         ${(t.log || []).map((l) => `<div class="log"><b>${esc(new Date(l.moment).toLocaleString("nl-NL"))}</b> · ${esc(l.actor)}<div>${esc(l.tekst)}</div></div>`).join("")}
@@ -160,22 +173,27 @@
     function backoffice() {
       if (!ik) return `<h1>Behandelaar</h1>${loginBlok("beheer")}`;
       if (!ik.medewerker) return `<div class="kaart"><h1>Geen behandelaarsrecht</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen supportmedewerker of beheerder. Accounts maakt de hoofdbeheerder aan in systeem.boaportaal.nl.</p><button class="btn" id="uit">Afmelden</button></div>`;
-      return `<h1>Incidentbeheer</h1><p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+      return `<h1>Incidentbeheer</h1>
+        <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
         <div class="layout"><nav>
-          <button class="${wachtrij==="support"?"aan":""}" data-rij="support">Wachtrij Support (1e lijn)</button>
-          <button class="${wachtrij==="beheer"?"aan":""}" data-rij="beheer">Geëscaleerd naar Beheer (2e lijn)</button>
-          <button class="${wachtrij==="gesloten"?"aan":""}" data-rij="gesloten">Gesloten</button>
-          <button class="${wachtrij==="audit"?"aan":""}" data-rij="audit">Audit & logboek</button>
+          <button class="${wachtrij==="support"?"aan":""}" data-rij="support">Support, 1e lijn <span class="tel">${tellen.support}</span></button>
+          <button class="${wachtrij==="beheer"?"aan":""}" data-rij="beheer">Beheer, 2e lijn <span class="tel">${tellen.beheer}</span></button>
+          <button class="${wachtrij==="gesloten"?"aan":""}" data-rij="gesloten">Gesloten <span class="tel">${tellen.gesloten}</span></button>
+          <button class="${wachtrij==="audit"?"aan":""}" data-rij="audit">Audit</button>
         </nav><div>
           ${wachtrij==="audit" ? auditTabel() : tabel(rij)}
-          ${detail()}
+          ${wachtrij==="audit" ? "" : detail()}
           <p class="fout">${esc(fout)}</p>
         </div></div>
         <p><button class="btn sec" id="uit">Afmelden</button></p>`;
     }
 
     function auditTabel() {
-      return tabel(rij.map((a) => ({ nummer: a.ticketnummer || a.soort, client_id: a.doel_client_id, pv_naam: a.doel_pv_naam, categorie: a.reden, prioriteit: a.niveau, status: `${a.beheerder_id} · ${new Date(a.moment).toLocaleString("nl-NL")}` })));
+      if (!rij.length) return `<div class="leeg">Geen auditregels. Dit zijn geen tickets.</div>`;
+      return `<p>Register van inzage en auth-wijzigingen. Dit zijn geen tickets, dus je kunt ze niet openen. Het volledige filter zit op systeem.boaportaal.nl.</p>
+        <table><thead><tr><th>Moment</th><th>Soort</th><th>Niveau</th><th>Dossier</th><th>Reden</th><th>Beheerder</th></tr></thead><tbody>
+        ${rij.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(a.soort)}</td><td>${esc(a.niveau)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.reden)}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td></tr>`).join("")}
+        </tbody></table>`;
     }
 
     function teken() {
@@ -220,7 +238,9 @@
       });
       document.getElementById("nood")?.addEventListener("submit", (e) => void indien(e, false));
       document.getElementById("ticket")?.addEventListener("submit", (e) => void indien(e, true));
-      document.querySelectorAll(".open").forEach((b) => b.addEventListener("click", async () => {
+      document.querySelectorAll(".open").forEach((b) => b.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if (wachtrij === "audit") return;
         const nummer = b.closest("tr").dataset.nummer;
         const { data, error } = await sb.rpc("boa_ticket_detail", { p_nummer: nummer });
         fout = error ? error.message : "";
@@ -282,7 +302,9 @@
       }
       const { data, error } = await sb.rpc("boa_wachtrij", { p_lijn: wachtrij });
       fout = error ? error.message : "";
-      rij = data || [];
+      if (Array.isArray(data)) { rij = data; return; }
+      rij = data?.items || [];
+      tellen = { support: Number(data?.support || 0), beheer: Number(data?.beheer || 0), gesloten: Number(data?.gesloten || 0) };
     }
 
     await sessie();
