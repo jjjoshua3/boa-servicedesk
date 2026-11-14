@@ -62,7 +62,13 @@
       const { data } = await sb.auth.getSession();
       if (!data.session) { ik = null; return; }
       const { data: prof, error } = await sb.rpc("boa_ik");
-      if (error) { fout = error.message; ik = null; return; }
+      if (error) {
+        fout = error.message.includes("function") || error.message.includes("schema")
+          ? "Het identiteitsregister is nog niet actief. Draai schema.sql in Supabase."
+          : error.message;
+        ik = null;
+        return;
+      }
       ik = prof;
     }
 
@@ -191,12 +197,17 @@
       document.getElementById("login")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const { error } = await sb.auth.signInWithPassword({ email: String(f.get("email")), password: String(f.get("password")) });
-        if (error) { fout = "Aanmelden lukt niet."; teken(); return; }
+        const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("email")).trim(), password: String(f.get("password")) });
+        if (error || !data.session) { fout = "Aanmelden lukt niet."; teken(); return; }
         await sessie();
-        fout = "";
-        if (scherm === "login-indiener") { scherm = "indiener"; rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []); }
-        else { scherm = "back"; if (ik?.medewerker) await laadRij(); }
+        if (scherm === "login-indiener") {
+          scherm = "indiener";
+          if (ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []);
+        } else {
+          scherm = "back";
+          if (ik?.medewerker) await laadRij();
+        }
+        if (!ik && !fout) fout = "Aangemeld, maar het dossier is niet geladen.";
         teken();
       });
       document.getElementById("nood")?.addEventListener("submit", (e) => void indien(e, false));
