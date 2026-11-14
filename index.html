@@ -22,7 +22,7 @@
     input, select, textarea { font:inherit; border:1px solid var(--lijn); padding:8px 10px; width:100%; background:#fff; }
     textarea { min-height:90px; }
     .rij { display:flex; flex-wrap:wrap; gap:8px; }
-    .btn { background:var(--actie); color:#fff; border:0; padding:8px 14px; }
+    .btn { background:var(--actie); color:#fff; border:0; padding:8px 14px; text-decoration:none; display:inline-block; }
     .btn.sec { background:#fff; color:var(--navy); border:1px solid var(--lijn); }
     .btn:disabled { opacity:.45; cursor:not-allowed; }
     .layout { display:grid; grid-template-columns:240px 1fr; gap:16px; align-items:start; }
@@ -65,6 +65,37 @@
     let tellen = { support: 0, beheer: 0, gesloten: 0 };
     let fout = "";
     let melding = "";
+    let factor = null;
+    let mfaLet = "";
+
+    async function vraagFactor(naam) {
+      if (sessionStorage.getItem(`boa-ok-${naam}`) === "1") return "klaar";
+      const lijst = await sb.auth.mfa.listFactors();
+      if (lijst.error) return "uit";
+      const verified = (lijst.data?.totp || []).filter((f) => f.status === "verified" && (naam === "beheer" ? f.friendly_name === "beheer" : !f.friendly_name || f.friendly_name === "portaal" || f.friendly_name === "BOA Portaal"));
+      if (verified[0]) return { naam, modus: "code", factorId: verified[0].id, qr: "", geheim: "" };
+      for (const f of lijst.data?.all || []) {
+        if (f.status === "verified") continue;
+        if (naam === "beheer" && f.friendly_name !== "beheer") continue;
+        if (naam === "portaal" && f.friendly_name === "beheer") continue;
+        await sb.auth.mfa.unenroll({ factorId: f.id });
+      }
+      const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: naam, issuer: naam === "beheer" ? "BOA Beheer" : "BOA Portaal" });
+      if (vers.error || !vers.data?.totp?.qr_code) return "uit";
+      return { naam, modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret || "" };
+    }
+
+    async function eisFactor(naam, verder) {
+      const uit = await vraagFactor(naam);
+      if (uit === "uit") {
+        mfaLet = "Tweestapsverificatie staat nog uit. Je bent ingelogd met alleen je wachtwoord.";
+        sessionStorage.setItem(`boa-ok-${naam}`, "1");
+        return true;
+      }
+      if (uit === "klaar") return true;
+      factor = { ...uit, verder };
+      return false;
+    }
 
     async function sessie() {
       const { data } = await sb.auth.getSession();
@@ -108,6 +139,7 @@
       }
       return `<h1>Mijn meldingen</h1>
         <p><b>${esc(ik.pv_naam)}</b> · <span class="badge">${esc(ik.client_id)}</span></p>
+        ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
         ${formulier(true)}
         <div class="kaart"><h2>Lopend en gesloten</h2>${tabel(rij)}</div>
         ${detail()}
@@ -162,6 +194,7 @@
         ${(t.log || []).map((l) => `<div class="log"><b>${esc(new Date(l.moment).toLocaleString("nl-NL"))}</b> · ${esc(l.actor)}<div>${esc(l.tekst)}</div></div>`).join("")}
         <form id="reactie"><label>Reactie<textarea name="tekst" required></textarea></label><button class="btn">Plaatsen</button></form>
         ${mag ? `<div class="rij" style="margin-top:10px">
+          <a class="btn sec" href="https://systeem.boaportaal.nl/?client=${encodeURIComponent(t.client_id || t.nummer)}&van=${encodeURIComponent(t.nummer)}" target="_blank" rel="noopener">Gebruiker opzoeken</a>
           <button class="btn sec" data-status="In behandeling (Support)">In behandeling</button>
           <button class="btn sec" data-status="Wacht op Indiener">Wacht op indiener</button>
           <button class="btn sec" data-status="Opgelost / Gesloten">Sluiten</button>
@@ -175,6 +208,7 @@
       if (!ik.medewerker) return `<div class="kaart"><h1>Geen behandelaarsrecht</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen supportmedewerker of beheerder. Accounts maakt de hoofdbeheerder aan in systeem.boaportaal.nl.</p><button class="btn" id="uit">Afmelden</button></div>`;
       return `<h1>Incidentbeheer</h1>
         <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+        ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
         <div class="layout"><nav>
           <button class="${wachtrij==="support"?"aan":""}" data-rij="support">Support, 1e lijn <span class="tel">${tellen.support}</span></button>
           <button class="${wachtrij==="beheer"?"aan":""}" data-rij="beheer">Beheer, 2e lijn <span class="tel">${tellen.beheer}</span></button>
@@ -196,7 +230,24 @@
         </tbody></table>`;
     }
 
+    function factorHtml() {
+      const setup = factor.modus === "setup";
+      const beheer = factor.naam === "beheer";
+      return `<form id="factor" class="kaart">
+        <h1>${setup ? (beheer ? "Beheer-authenticator instellen" : "Portaal-authenticator instellen") : (beheer ? "Beheer-authenticator" : "Portaal-authenticator")}</h1>
+        <p>${beheer
+          ? "Deze code hoort bij behandelaar, systeem en mail. Niet bij boaportaal.nl."
+          : "Deze code hoort bij boaportaal.nl en bij indiener. Niet bij systeem of mail."}</p>
+        ${setup && factor.qr ? `<p><img src="${factor.qr}" alt="QR-code voor de authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
+        ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
+        <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
+        <div class="rij"><button class="btn">Bevestigen</button><button class="btn sec" type="button" id="factor-terug">Terug</button></div>
+        <p class="fout">${esc(fout)}</p>
+      </form>`;
+    }
+
     function teken() {
+      if (factor) { app.innerHTML = factorHtml(); bindFactor(); return; }
       app.innerHTML = scherm === "poort" ? poort()
         : scherm === "indiener" ? indiener()
         : scherm === "nood" ? nood()
@@ -205,13 +256,48 @@
       bind();
     }
 
+    function bindFactor() {
+      document.getElementById("factor-terug")?.addEventListener("click", async () => {
+        factor = null;
+        fout = "";
+        scherm = "poort";
+        teken();
+      });
+      document.getElementById("factor")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
+        const uitdaging = await sb.auth.mfa.challenge({ factorId: factor.factorId });
+        if (uitdaging.error || !uitdaging.data) { fout = "De code kon niet worden gevraagd. Probeer het opnieuw."; teken(); return; }
+        const check = await sb.auth.mfa.verify({ factorId: factor.factorId, challengeId: uitdaging.data.id, code });
+        if (check.error) { fout = "Die code klopt niet."; teken(); return; }
+        sessionStorage.setItem(`boa-ok-${factor.naam}`, "1");
+        const verder = factor.verder;
+        factor = null;
+        fout = "";
+        scherm = verder;
+        if (verder === "indiener" && ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []);
+        if (verder === "back" && ik?.medewerker) await laadRij();
+        teken();
+      });
+    }
+
     function bind() {
-      document.getElementById("indiener")?.addEventListener("click", async () => { scherm = "indiener"; fout = ""; await sessie(); if (ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []); teken(); });
-      document.getElementById("behandelaar")?.addEventListener("click", async () => { scherm = "back"; fout = ""; await sessie(); if (ik?.medewerker) await laadRij(); teken(); });
+      document.getElementById("indiener")?.addEventListener("click", async () => {
+        scherm = "indiener"; fout = ""; await sessie();
+        if (ik && !(await eisFactor("portaal", "indiener"))) { teken(); return; }
+        if (ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []);
+        teken();
+      });
+      document.getElementById("behandelaar")?.addEventListener("click", async () => {
+        scherm = "back"; fout = ""; await sessie();
+        if (ik?.medewerker && !(await eisFactor("beheer", "back"))) { teken(); return; }
+        if (ik?.medewerker) await laadRij();
+        teken();
+      });
       document.getElementById("inlog")?.addEventListener("click", () => { scherm = "login-indiener"; teken(); });
       document.getElementById("naar-nood")?.addEventListener("click", () => { scherm = "nood"; fout = ""; melding = ""; teken(); });
       document.getElementById("terug")?.addEventListener("click", () => { scherm = "poort"; fout = ""; teken(); });
-      document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; scherm = "poort"; teken(); });
+      document.getElementById("uit")?.addEventListener("click", async () => { sessionStorage.removeItem("boa-ok-portaal"); sessionStorage.removeItem("boa-ok-beheer"); await sb.auth.signOut(); ik = null; factor = null; scherm = "poort"; teken(); });
       document.getElementById("login")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
@@ -226,6 +312,11 @@
         });
         if (error || !data.session) { fout = "Aanmelden lukt niet."; teken(); return; }
         await sessie();
+        sessionStorage.removeItem("boa-ok-portaal");
+        sessionStorage.removeItem("boa-ok-beheer");
+        const deur = scherm === "login-indiener" ? "portaal" : "beheer";
+        const verder = scherm === "login-indiener" ? "indiener" : "back";
+        if (!(await eisFactor(deur, verder))) { teken(); return; }
         if (scherm === "login-indiener") {
           scherm = "indiener";
           if (ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []);
