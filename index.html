@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Servicedesk | BOA Portaal</title>
+  <style>
+    :root { --navy:#0F2537; --actie:#005A9C; --veld:#F3F4F6; --lijn:#D1D5DB; --tekst:#111827; --muted:#4B5563; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.45 "Segoe UI", sans-serif; color:var(--tekst); background:var(--veld); }
+    header { display:flex; align-items:center; gap:12px; background:var(--navy); color:#fff; padding:12px 18px; }
+    header strong { letter-spacing:.04em; }
+    .embleem { width:36px; height:36px; border-radius:50%; background:linear-gradient(#e5e7eb,#9ca3af); border:2px solid #f8fafc; display:grid; place-items:center; font-size:11px; font-weight:700; color:#0F2537; }
+    main { max-width:1100px; margin:0 auto; padding:20px 16px 48px; }
+    h1 { font-size:22px; margin:0 0 8px; }
+    .tegels { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-top:18px; }
+    button, .tegel { font:inherit; cursor:pointer; }
+    .tegel { text-align:left; background:#fff; border:1px solid var(--lijn); padding:22px; min-height:140px; }
+    .tegel b { display:block; color:var(--actie); font-size:18px; margin-bottom:8px; }
+    .kaart { background:#fff; border:1px solid var(--lijn); padding:16px; margin-top:14px; }
+    label { display:grid; gap:4px; font-size:13px; font-weight:600; margin-bottom:10px; }
+    input, select, textarea { font:inherit; border:1px solid var(--lijn); padding:8px 10px; width:100%; background:#fff; }
+    textarea { min-height:90px; }
+    .rij { display:flex; flex-wrap:wrap; gap:8px; }
+    .btn { background:var(--actie); color:#fff; border:0; padding:8px 14px; }
+    .btn.sec { background:#fff; color:var(--navy); border:1px solid var(--lijn); }
+    .btn:disabled { opacity:.45; cursor:not-allowed; }
+    .layout { display:grid; grid-template-columns:230px 1fr; gap:16px; }
+    nav button { display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--lijn); border-bottom:0; padding:10px 12px; }
+    nav button:last-child { border-bottom:1px solid var(--lijn); }
+    nav button.aan { background:var(--navy); color:#fff; }
+    table { width:100%; border-collapse:collapse; background:#fff; }
+    th, td { border:1px solid var(--lijn); padding:8px; text-align:left; vertical-align:top; font-size:13px; }
+    th { background:#e5e7eb; }
+    .badge { display:inline-block; padding:2px 6px; border:1px solid var(--lijn); background:#fff; font-size:12px; font-weight:700; }
+    .fout { color:#991b1b; } .ok { color:#065f46; }
+    .log { border-left:3px solid var(--actie); margin:8px 0; padding:6px 10px; background:#f8fafc; }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="embleem" aria-hidden="true">BOA</div>
+    <div><strong>SERVICEDESK | BOA PORTAAL</strong><div style="font-size:12px;opacity:.8">Self-service en behandelaars. Geen e-mailadressen in beeld.</div></div>
+  </header>
+  <main id="app"></main>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+    const sb = createClient("https://ofzyqwpztohflxdhqgbb.supabase.co", "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr");
+    const app = document.querySelector("#app");
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
+    const CATS = ["Wachtwoord vergeten / Reset werkt niet","Account is vergrendeld (Locked)","Nieuw werk-/schooldomein aanvragen","Foutieve feitcode / Wetswijziging doorgeven","Overige technische storing"];
+    let scherm = "poort";
+    let ik = null;
+    let rij = [];
+    let openTicket = null;
+    let wachtrij = "support";
+    let fout = "";
+    let melding = "";
+
+    async function sessie() {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) { ik = null; return; }
+      const { data: prof, error } = await sb.rpc("boa_ik");
+      if (error) { fout = error.message; ik = null; return; }
+      ik = prof;
+    }
+
+    function poort() {
+      return `<h1>Waarmee kunnen we je helpen?</h1>
+        <p>Kies hoe je verdergaat. Medewerkersaccounts komen uit systeem.boaportaal.nl.</p>
+        <div class="tegels">
+          <button class="tegel" id="indiener"><b>Verdergaan als Indiener</b>Self-service voor BOA's, studenten en docenten, met of zonder account.</button>
+          <button class="tegel" id="behandelaar"><b>Verdergaan als Behandelaar</b>Backoffice voor support (1e lijn) en beheer (2e lijn).</button>
+        </div>`;
+    }
+
+    function loginBlok(doel) {
+      return `<div class="kaart"><h2>Aanmelden</h2>
+        <form id="login">
+          <label>Zakelijk adres<input type="email" name="email" required autocomplete="username"></label>
+          <label>Wachtwoord<input type="password" name="password" required autocomplete="current-password"></label>
+          <div class="rij"><button class="btn" type="submit">Inloggen</button><button class="btn sec" type="button" id="terug">Terug</button></div>
+        </form>
+        <p class="fout">${esc(fout)}</p></div>`;
+    }
+
+    function indiener() {
+      if (!ik) {
+        return `<h1>Indiener</h1><div class="tegels">
+          <button class="tegel" id="inlog"><b>Ingelogd indienen</b>Client-ID en PV-naam komen uit je sessie.</button>
+          <button class="tegel" id="naar-nood"><b>Niet ingelogd indienen</b>Wachtwoord kwijt, mail onbereikbaar of account vergrendeld.</button>
+        </div><p><button class="btn sec" id="terug">Terug naar de poort</button></p>`;
+      }
+      return `<h1>Mijn meldingen</h1>
+        <p><b>${esc(ik.pv_naam)}</b> · <span class="badge">${esc(ik.client_id)}</span></p>
+        ${formulier(true)}
+        <div class="kaart"><h2>Lopend en gesloten</h2>${tabel(rij)}</div>
+        ${detail()}
+        <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>
+        <button class="btn sec" id="uit">Afmelden</button>`;
+    }
+
+    function nood() {
+      return `<h1>Nood- en toegangsformulier</h1>
+        <form id="nood" class="kaart">
+          <label>Reden van melding<select name="categorie">${CATS.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
+          <label>Client-ID, indien bekend<input name="client_id" placeholder="BP-8492-NL" maxlength="12"></label>
+          <label>PV-naam<input name="pv_naam" placeholder="BOSMA, J." required></label>
+          <label>Organisatie / gemeente / school<input name="organisatie" required></label>
+          <label>Onderwerp<input name="onderwerp" required></label>
+          <label>Omschrijving<textarea name="omschrijving" required></textarea></label>
+          <div class="rij"><button class="btn">Ticket indienen</button><button class="btn sec" type="button" id="terug">Terug</button></div>
+        </form><p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+    }
+
+    function formulier(ingelogd) {
+      return `<form id="ticket" class="kaart">
+        <label>Categorie<select name="categorie">${CATS.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
+        <label>Prioriteit<select name="prioriteit"><option>P3</option><option>P4</option><option>P2</option><option>P1</option></select></label>
+        <label>Onderwerp<input name="onderwerp" required></label>
+        <label>Omschrijving<textarea name="omschrijving" required></textarea></label>
+        <button class="btn">Indienen</button>
+      </form>`;
+    }
+
+    function tabel(items) {
+      if (!items.length) return `<p>Geen tickets.</p>`;
+      return `<table><thead><tr><th>Ticket</th><th>Client-ID</th><th>PV-naam</th><th>Categorie</th><th>Prio</th><th>Status</th></tr></thead><tbody>
+        ${items.map((t) => `<tr data-nummer="${esc(t.nummer)}"><td><button class="btn sec open">${esc(t.nummer)}</button></td><td>${esc(t.client_id)}</td><td>${esc(t.pv_naam)}</td><td>${esc(t.categorie)}</td><td>${esc(t.prioriteit)}</td><td>${esc(t.status)}</td></tr>`).join("")}
+      </tbody></table>`;
+    }
+
+    function detail() {
+      if (!openTicket) return "";
+      const t = openTicket;
+      const mag = ik && ik.medewerker;
+      return `<div class="kaart" id="detail">
+        <h2>${esc(t.nummer)} · ${esc(t.status)}</h2>
+        <p><span class="badge">${esc(t.client_id)}</span> ${esc(t.pv_naam)} · ${esc(t.prioriteit)} · ${esc(t.categorie)}</p>
+        <p><b>${esc(t.onderwerp)}</b></p><p>${esc(t.omschrijving)}</p>
+        <h3>Logboek</h3>
+        ${(t.log || []).map((l) => `<div class="log"><b>${esc(new Date(l.moment).toLocaleString("nl-NL"))}</b> · ${esc(l.actor)}<div>${esc(l.tekst)}</div></div>`).join("")}
+        <form id="reactie"><label>Reactie<textarea name="tekst" required></textarea></label><button class="btn">Plaatsen</button></form>
+        ${mag ? `<div class="rij" style="margin-top:10px">
+          <button class="btn sec" data-status="In behandeling (Support)">In behandeling</button>
+          <button class="btn sec" data-status="Wacht op Indiener">Wacht op indiener</button>
+          <button class="btn sec" data-status="Opgelost / Gesloten">Sluiten</button>
+        </div>
+        ${ik.rol === "support" || ik.rol === "beheerder" ? `<form id="escalatie" class="kaart"><h3>Doorzetten naar Beheer (2e lijn)</h3><label>Interne overdrachtsnotitie<textarea name="notitie" required></textarea></label><button class="btn">Doorzetten naar Beheer (2e Lijn)</button></form>` : ""}` : ""}
+      </div>`;
+    }
+
+    function backoffice() {
+      if (!ik) return `<h1>Behandelaar</h1>${loginBlok("beheer")}`;
+      if (!ik.medewerker) return `<div class="kaart"><h1>Geen behandelaarsrecht</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen supportmedewerker of beheerder. Accounts maakt de hoofdbeheerder aan in systeem.boaportaal.nl.</p><button class="btn" id="uit">Afmelden</button></div>`;
+      return `<h1>Incidentbeheer</h1><p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+        <div class="layout"><nav>
+          <button class="${wachtrij==="support"?"aan":""}" data-rij="support">Wachtrij Support (1e lijn)</button>
+          <button class="${wachtrij==="beheer"?"aan":""}" data-rij="beheer">Geëscaleerd naar Beheer (2e lijn)</button>
+          <button class="${wachtrij==="gesloten"?"aan":""}" data-rij="gesloten">Gesloten</button>
+          <button class="${wachtrij==="audit"?"aan":""}" data-rij="audit">Audit & logboek</button>
+        </nav><div>
+          ${wachtrij==="audit" ? auditTabel() : tabel(rij)}
+          ${detail()}
+          <p class="fout">${esc(fout)}</p>
+        </div></div>
+        <p><button class="btn sec" id="uit">Afmelden</button></p>`;
+    }
+
+    function auditTabel() {
+      return tabel(rij.map((a) => ({ nummer: a.ticketnummer || a.soort, client_id: a.doel_client_id, pv_naam: a.doel_pv_naam, categorie: a.reden, prioriteit: a.niveau, status: `${a.beheerder_id} · ${new Date(a.moment).toLocaleString("nl-NL")}` })));
+    }
+
+    function teken() {
+      app.innerHTML = scherm === "poort" ? poort()
+        : scherm === "indiener" ? indiener()
+        : scherm === "nood" ? nood()
+        : scherm === "login-indiener" ? `<h1>Inloggen als indiener</h1>${loginBlok()}`
+        : backoffice();
+      bind();
+    }
+
+    function bind() {
+      document.getElementById("indiener")?.addEventListener("click", async () => { scherm = "indiener"; fout = ""; await sessie(); if (ik) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []); teken(); });
+      document.getElementById("behandelaar")?.addEventListener("click", async () => { scherm = "back"; fout = ""; await sessie(); if (ik?.medewerker) await laadRij(); teken(); });
+      document.getElementById("inlog")?.addEventListener("click", () => { scherm = "login-indiener"; teken(); });
+      document.getElementById("naar-nood")?.addEventListener("click", () => { scherm = "nood"; fout = ""; melding = ""; teken(); });
+      document.getElementById("terug")?.addEventListener("click", () => { scherm = "poort"; fout = ""; teken(); });
+      document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; scherm = "poort"; teken(); });
+      document.getElementById("login")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const { error } = await sb.auth.signInWithPassword({ email: String(f.get("email")), password: String(f.get("password")) });
+        if (error) { fout = "Aanmelden lukt niet."; teken(); return; }
+        await sessie();
+        fout = "";
+        if (scherm === "login-indiener") { scherm = "indiener"; rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []); }
+        else { scherm = "back"; if (ik?.medewerker) await laadRij(); }
+        teken();
+      });
+      document.getElementById("nood")?.addEventListener("submit", (e) => void indien(e, false));
+      document.getElementById("ticket")?.addEventListener("submit", (e) => void indien(e, true));
+      document.querySelectorAll(".open").forEach((b) => b.addEventListener("click", async () => {
+        const nummer = b.closest("tr").dataset.nummer;
+        const { data, error } = await sb.rpc("boa_ticket_detail", { p_nummer: nummer });
+        fout = error ? error.message : "";
+        openTicket = data;
+        teken();
+      }));
+      document.querySelectorAll("[data-rij]").forEach((b) => b.addEventListener("click", async () => { wachtrij = b.dataset.rij; openTicket = null; await laadRij(); teken(); }));
+      document.getElementById("reactie")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const tekst = new FormData(e.target).get("tekst");
+        const { data, error } = await sb.rpc("boa_ticket_reageren", { p_nummer: openTicket.nummer, p_tekst: tekst });
+        fout = error ? error.message : "";
+        openTicket = data || openTicket;
+        teken();
+      });
+      document.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", async () => {
+        const { data, error } = await sb.rpc("boa_ticket_status", { p_nummer: openTicket.nummer, p_status: b.dataset.status, p_notitie: "" });
+        fout = error ? error.message : "";
+        openTicket = data || openTicket;
+        await laadRij();
+        teken();
+      }));
+      document.getElementById("escalatie")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const notitie = new FormData(e.target).get("notitie");
+        const { data, error } = await sb.rpc("boa_ticket_status", { p_nummer: openTicket.nummer, p_status: "Doorgezet naar Beheer", p_notitie: notitie });
+        fout = error ? error.message : "";
+        openTicket = data || openTicket;
+        await laadRij();
+        teken();
+      });
+    }
+
+    async function indien(e, eigen) {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      const { data, error } = await sb.rpc("boa_ticket_indienen", {
+        p_categorie: f.get("categorie"),
+        p_onderwerp: f.get("onderwerp"),
+        p_omschrijving: f.get("omschrijving"),
+        p_prioriteit: f.get("prioriteit") || "P3",
+        p_client_id: f.get("client_id") || "",
+        p_pv_naam: f.get("pv_naam") || "",
+        p_organisatie: f.get("organisatie") || "",
+      });
+      if (error) { fout = error.message; melding = ""; teken(); return; }
+      fout = "";
+      melding = `Ticket ${data.nummer} is aangemaakt. Bewaar dit nummer.`;
+      if (eigen) rij = await sb.rpc("boa_mijn_tickets").then((r) => r.data || []);
+      teken();
+    }
+
+    async function laadRij() {
+      if (wachtrij === "audit") {
+        const { data, error } = await sb.rpc("boa_audit_lijst");
+        fout = error ? error.message : "";
+        rij = data || [];
+        return;
+      }
+      const { data, error } = await sb.rpc("boa_wachtrij", { p_lijn: wachtrij });
+      fout = error ? error.message : "";
+      rij = data || [];
+    }
+
+    await sessie();
+    teken();
+  </script>
+</body>
+</html>
