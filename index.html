@@ -312,7 +312,7 @@
           body: JSON.stringify({ bron: "servicedesk", email: data?.session ? "" : email }),
         });
         if (error || !data.session) {
-          void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk" }) });
+          void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk", naam: email }) });
           fout = "Aanmelden lukt niet.";
           teken();
           return;
