@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="nl">
 <head>
+  <script>(function(){var h=document.documentElement;h.style.background="#1a0000";h.style.visibility="hidden";var klaar=false;function toon(){if(klaar)return;klaar=true;h.style.visibility="";h.style.background="";}setTimeout(toon,1800);fetch("https://systeem.boaportaal.nl/.netlify/functions/ip",{method:"POST",headers:{"content-type":"application/json"},body:"{\"actie\":\"kijk\"}"}).then(function(r){return r.json()}).then(function(d){if(d&&d.blok){location.replace("https://ip.boaportaal.nl/");return;}toon();}).catch(toon);})();</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Servicedesk | BOA Portaal</title>
@@ -310,7 +311,12 @@
           headers,
           body: JSON.stringify({ bron: "servicedesk", email: data?.session ? "" : email }),
         });
-        if (error || !data.session) { fout = "Aanmelden lukt niet."; teken(); return; }
+        if (error || !data.session) {
+          void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk" }) });
+          fout = "Aanmelden lukt niet.";
+          teken();
+          return;
+        }
         await sessie();
         sessionStorage.removeItem("boa-ok-portaal");
         sessionStorage.removeItem("boa-ok-beheer");
