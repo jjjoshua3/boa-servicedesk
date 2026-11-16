@@ -303,11 +303,18 @@
         e.preventDefault();
         const f = new FormData(e.target);
         const sleutel = String(f.get("email") || "").trim();
-        const res = await fetch("https://systeem.boaportaal.nl/.netlify/functions/aanmelden", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sleutel, password: String(f.get("password") || ""), bron: "servicedesk" }),
-        });
+        let res;
+        try {
+          res = await fetch("https://systeem.boaportaal.nl/.netlify/functions/aanmelden", {
+            method: "POST",
+            headers: { "content-type": "text/plain" },
+            body: JSON.stringify({ sleutel, password: String(f.get("password") || ""), bron: "servicedesk" }),
+          });
+        } catch {
+          fout = "De servicedesk kon het accountsysteem niet bereiken.";
+          teken();
+          return;
+        }
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body.access_token) {
           void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk", naam: sleutel }) });
