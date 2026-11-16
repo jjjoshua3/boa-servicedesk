@@ -124,7 +124,7 @@
     function loginBlok(doel) {
       return `<div class="kaart"><h2>Aanmelden</h2>
         <form id="login">
-          <label>Zakelijk adres<input type="email" name="email" required autocomplete="username"></label>
+          <label>Client-ID of zakelijk adres<input name="email" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="BP-0164-RW of naam@organisatie.nl"></label>
           <label>Wachtwoord<input type="password" name="password" required autocomplete="current-password"></label>
           <div class="rij"><button class="btn" type="submit">Inloggen</button><button class="btn sec" type="button" id="terug">Terug</button></div>
         </form>
@@ -302,21 +302,30 @@
       document.getElementById("login")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const email = String(f.get("email")).trim();
-        const { data, error } = await sb.auth.signInWithPassword({ email, password: String(f.get("password")) });
-        const headers = { "Content-Type": "application/json" };
-        if (data?.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
-        void fetch("https://systeem.boaportaal.nl/.netlify/functions/inlog", {
+        const sleutel = String(f.get("email") || "").trim();
+        const res = await fetch("https://systeem.boaportaal.nl/.netlify/functions/aanmelden", {
           method: "POST",
-          headers,
-          body: JSON.stringify({ bron: "servicedesk", email: data?.session ? "" : email }),
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sleutel, password: String(f.get("password") || ""), bron: "servicedesk" }),
         });
-        if (error || !data.session) {
-          void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk", naam: email }) });
-          fout = "Aanmelden lukt niet.";
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.access_token) {
+          void fetch("https://systeem.boaportaal.nl/.netlify/functions/ip", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actie: "poging", bron: "servicedesk", naam: sleutel }) });
+          fout = body.fout || "Aanmelden lukt niet.";
           teken();
           return;
         }
+        const gezet = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+        if (gezet.error || !gezet.data.session) {
+          fout = "Aangemeld, maar de sessie is niet gezet.";
+          teken();
+          return;
+        }
+        void fetch("https://systeem.boaportaal.nl/.netlify/functions/inlog", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${gezet.data.session.access_token}` },
+          body: JSON.stringify({ bron: "servicedesk" }),
+        });
         await sessie();
         sessionStorage.removeItem("boa-ok-portaal");
         sessionStorage.removeItem("boa-ok-beheer");
