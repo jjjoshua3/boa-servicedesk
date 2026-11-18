@@ -179,7 +179,7 @@
     function tabel(items) {
       if (!items.length) return `<div class="leeg">Geen meldingen in deze wachtrij.</div>`;
       return `<table><thead><tr><th>Ticket</th><th>Onderwerp</th><th>Indiener</th><th>Prio</th><th>Status</th></tr></thead><tbody>
-        ${items.map((t) => `<tr class="rijklik" data-nummer="${esc(t.nummer)}"><td><button class="btn sec open">${esc(t.nummer)}</button></td><td><b>${esc(t.onderwerp || t.categorie)}</b><div style="color:#4b5563">${esc(t.categorie)}</div></td><td>${esc(t.pv_naam)}<div class="badge">${esc(t.client_id)}</div></td><td>${prio(t.prioriteit)}</td><td>${esc(t.status)}</td></tr>`).join("")}
+        ${items.map((t) => `<tr class="rijklik" data-nummer="${esc(t.nummer)}"><td><button class="btn sec open">${esc(t.nummer)}</button></td><td><b>${esc(t.onderwerp || t.categorie)}</b><div style="color:#4b5563">${esc(t.categorie)}${t.organisatie ? ` · ${esc(t.organisatie)}` : ""}</div></td><td>${esc(t.pv_naam)}<div class="badge">${esc(t.client_id)}</div></td><td>${prio(t.prioriteit)}</td><td>${esc(t.status)}</td></tr>`).join("")}
       </tbody></table>`;
     }
 
@@ -189,7 +189,7 @@
       const mag = ik && ik.medewerker;
       return `<div class="kaart" id="detail">
         <div class="kopregel"><h2 style="margin:0">${esc(t.nummer)}</h2><span class="pill">${esc(t.status)}</span></div>
-        <p style="margin-top:8px">${prio(t.prioriteit)} <span class="badge">${esc(t.client_id)}</span> ${esc(t.pv_naam)} · ${esc(t.categorie)}</p>
+        <p style="margin-top:8px">${prio(t.prioriteit)} <span class="badge">${esc(t.client_id)}</span> ${esc(t.pv_naam)}${t.organisatie ? ` · ${esc(t.organisatie)}` : ""} · ${esc(t.categorie)}</p>
         <p><b>${esc(t.onderwerp)}</b></p><p>${esc(t.omschrijving)}</p>
         <h3>Logboek</h3>
         ${(t.log || []).map((l) => `<div class="log"><b>${esc(new Date(l.moment).toLocaleString("nl-NL"))}</b> · ${esc(l.actor)}<div>${esc(l.tekst)}</div></div>`).join("")}
@@ -209,6 +209,7 @@
       if (!ik.medewerker) return `<div class="kaart"><h1>Geen behandelaarsrecht</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen supportmedewerker of beheerder. Accounts maakt de hoofdbeheerder aan in systeem.boaportaal.nl.</p><button class="btn" id="uit">Afmelden</button></div>`;
       return `<h1>Incidentbeheer</h1>
         <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+        <p>Tickets van een ambassadeur-organisatie staan op de eerste lijn ook in deze rij. Pas na doorzetten gaan ze naar Beheer.</p>
         ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
         <div class="layout"><nav>
           <button class="${wachtrij==="support"?"aan":""}" data-rij="support">Support, 1e lijn <span class="tel">${tellen.support}</span></button>
